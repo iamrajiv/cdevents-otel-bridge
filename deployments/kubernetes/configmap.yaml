@@ -1,0 +1,29 @@
+# Bridge configuration mounted at /etc/cdevents-otel-bridge/config.yaml.
+# The defaults keep everything in memory and tracing off so the manifests work
+# on any cluster. To persist across restarts or run more than one replica, set
+# storage.type to "redis" and provide BRIDGE_REDIS_URL through the
+# cdevents-otel-bridge-secrets Secret referenced in deployment.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdevents-otel-bridge-config
+  namespace: cdevents-otel-bridge
+data:
+  config.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 8080
+
+    storage:
+      type: "memory"
+      redisTTL: 604800
+
+    otel:
+      enabled: false
+      endpoint: "otel-collector.observability.svc.cluster.local:4317"
+      insecure: true
+      serviceName: "cdevents-otel-bridge"
+
+    log:
+      level: "info"
+      format: "json"

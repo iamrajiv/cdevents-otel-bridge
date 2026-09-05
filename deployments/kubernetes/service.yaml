@@ -1,0 +1,19 @@
+# ClusterIP Service exposing the bridge API on port 80 inside the cluster.
+# CI/CD tools and instrumented applications reach it at
+# http://cdevents-otel-bridge.cdevents-otel-bridge.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: cdevents-otel-bridge
+  namespace: cdevents-otel-bridge
+  labels:
+    app: cdevents-otel-bridge
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: cdevents-otel-bridge

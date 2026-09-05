@@ -1,0 +1,94 @@
+# Demo stack: Redis (storage), Jaeger (trace backend), the bridge (tracing
+# enabled, Redis storage) and the sample application instrumented with the
+# otelbridge span processor. The mock deployer sits behind the `demo`
+# profile and is run on demand with `make demo-events`.
+#
+# Host ports are taken from the *_HOST_PORT variables (see .env.example)
+# so the stack can run next to other projects that use the defaults.
+name: cdevents-otel-bridge
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports:
+      - "${JAEGER_UI_HOST_PORT:-16686}:16686"
+      - "${OTLP_GRPC_HOST_PORT:-4317}:4317"
+      - "${OTLP_HTTP_HOST_PORT:-4318}:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  bridge:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    ports:
+      - "${BRIDGE_HOST_PORT:-8080}:8080"
+    environment:
+      - BRIDGE_STORAGE_TYPE=redis
+      - BRIDGE_REDIS_URL=redis://redis:6379
+      - BRIDGE_REDIS_TTL=${BRIDGE_REDIS_TTL:-86400}
+      - BRIDGE_OTEL_ENABLED=true
+      - BRIDGE_OTEL_ENDPOINT=jaeger:4317
+      - BRIDGE_OTEL_INSECURE=true
+      - BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-info}
+      - BRIDGE_LOG_FORMAT=${BRIDGE_LOG_FORMAT:-text}
+    depends_on:
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  sample-app:
+    build:
+      context: ../..
+      dockerfile: examples/sample-app/Dockerfile
+    ports:
+      - "${SAMPLE_APP_HOST_PORT:-8081}:8081"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4317
+      - BRIDGE_URL=http://bridge:8080
+      - SERVICE_NAME=sample-app
+      - ENVIRONMENT=production
+      - PORT=8081
+      - JAEGER_UI_URL=http://localhost:${JAEGER_UI_HOST_PORT:-16686}
+    depends_on:
+      bridge:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  mock-deployer:
+    build:
+      context: ../..
+      dockerfile: examples/mock-deployer/Dockerfile
+    environment:
+      - BRIDGE_URL=http://bridge:8080
+      - EVENT_DELAY=${EVENT_DELAY:-1s}
+    depends_on:
+      bridge:
+        condition: service_healthy
+    profiles:
+      - demo

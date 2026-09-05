@@ -1,0 +1,120 @@
+[
+  {
+    "context": {
+      "version": "0.4.1",
+      "id": "evt-change-merged-001",
+      "source": "https://github.com/demo/sample-app",
+      "type": "dev.cdevents.change.merged.0.4.1",
+      "timestamp": "2026-01-29T10:00:00Z",
+      "chainId": "chain-demo-001"
+    },
+    "subject": {
+      "id": "pr-42",
+      "type": "change",
+      "content": {
+        "repository": {
+          "id": "github.com/demo/sample-app",
+          "url": "https://github.com/demo/sample-app"
+        }
+      }
+    },
+    "customData": {
+      "commitSha": "abc123def456",
+      "branch": "main",
+      "author": "developer@example.com",
+      "message": "Add new checkout feature"
+    }
+  },
+  {
+    "context": {
+      "version": "0.4.1",
+      "id": "evt-pipeline-run-001",
+      "source": "https://github.com/demo/sample-app/actions",
+      "type": "dev.cdevents.pipelinerun.finished.0.2.0",
+      "timestamp": "2026-01-29T10:05:30Z",
+      "chainId": "chain-demo-001",
+      "links": [
+        {
+          "linkType": "triggeredBy",
+          "linkId": "evt-change-merged-001"
+        }
+      ]
+    },
+    "subject": {
+      "id": "build-789",
+      "type": "pipelineRun",
+      "content": {
+        "pipelineName": "build-and-deploy",
+        "outcome": "success",
+        "url": "https://github.com/demo/sample-app/actions/runs/789"
+      }
+    },
+    "customData": {
+      "commitSha": "abc123def456",
+      "duration": "5m30s",
+      "artifactId": "sample-app:v1.0.0"
+    }
+  },
+  {
+    "context": {
+      "version": "0.4.1",
+      "id": "evt-deployed-001",
+      "source": "https://github.com/demo/sample-app/actions",
+      "type": "dev.cdevents.service.deployed.0.1.1",
+      "timestamp": "2026-01-29T10:07:00Z",
+      "chainId": "chain-demo-001",
+      "links": [
+        {
+          "linkType": "triggeredBy",
+          "linkId": "evt-pipeline-run-001"
+        }
+      ]
+    },
+    "subject": {
+      "id": "sample-app",
+      "type": "service",
+      "content": {
+        "environment": {
+          "id": "production"
+        },
+        "artifactId": "sample-app:v1.0.0"
+      }
+    },
+    "customData": {
+      "commitSha": "abc123def456",
+      "branch": "main",
+      "pipelineId": "build-789",
+      "pipelineUrl": "https://github.com/demo/sample-app/actions/runs/789",
+      "repository": "github.com/demo/sample-app",
+      "author": "developer@example.com",
+      "deployer": "github-actions",
+      "deploymentUrl": "https://sample-app.production.example.com"
+    }
+  },
+  {
+    "context": {
+      "version": "0.4.1",
+      "id": "evt-incident-001",
+      "source": "https://alerts.example.com/alertmanager",
+      "type": "dev.cdevents.incident.detected.0.2.0",
+      "timestamp": "2026-01-29T10:20:00Z",
+      "chainId": "chain-demo-001",
+      "links": [
+        {
+          "linkType": "causedBy",
+          "linkId": "evt-deployed-001"
+        }
+      ]
+    },
+    "subject": {
+      "id": "incident-101",
+      "type": "incident",
+      "content": {
+        "description": "High latency on /api/data",
+        "severity": "critical",
+        "service": "sample-app",
+        "environment": "production"
+      }
+    }
+  }
+]

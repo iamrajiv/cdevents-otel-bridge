@@ -1,0 +1,25 @@
+# Build output, test artifacts, local environment files and editor state.
+# Compiled binaries are never committed; build them with `make build`.
+/bin/
+/bridge
+/examples/sample-app/sample-app
+/examples/mock-deployer/mock-deployer
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+*.test
+*.out
+coverage.html
+
+.env
+vendor/
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

@@ -1,0 +1,18 @@
+# Files excluded from the Docker build context. Only sources, go.mod/go.sum,
+# configs and examples are needed to build the images.
+.git
+.github
+.idea
+.vscode
+bin/
+docs/
+deployments/kubernetes/
+deployments/docker-compose/
+scripts/
+test/
+*.md
+*.test
+*.out
+coverage.html
+.env
+.DS_Store

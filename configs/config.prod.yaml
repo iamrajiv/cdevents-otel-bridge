@@ -1,0 +1,21 @@
+# Production template: Redis for persistence (7 day TTL) and traces exported to
+# an in-cluster OpenTelemetry Collector. Set BRIDGE_REDIS_URL from a secret
+# rather than committing credentials here.
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+storage:
+  type: "redis"
+  redisURL: "redis://redis:6379"
+  redisTTL: 604800
+
+otel:
+  enabled: true
+  endpoint: "otel-collector:4317"
+  insecure: true
+  serviceName: "cdevents-otel-bridge"
+
+log:
+  level: "info"
+  format: "json"

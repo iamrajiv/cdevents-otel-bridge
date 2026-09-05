@@ -1,0 +1,22 @@
+# Kustomize entry point: render with `kubectl kustomize deployments/kubernetes`
+# or apply with `kubectl apply -k deployments/kubernetes`. Adds standard
+# app.kubernetes.io labels and pins the image tag in one place.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cdevents-otel-bridge
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: cdevents-otel-bridge
+      app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: ghcr.io/iamrajiv/cdevents-otel-bridge
+    newTag: latest

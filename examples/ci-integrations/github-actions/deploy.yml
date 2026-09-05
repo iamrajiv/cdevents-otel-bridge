@@ -1,0 +1,112 @@
+# GitHub Actions workflow demonstrating CDEvents integration with the CDEvents-OTel Bridge.
+#
+# This workflow builds, tests, and deploys an application, then sends a service.deployed
+# CDEvent to track the deployment in the observability platform. The event includes
+# deployment metadata such as commit SHA, pipeline ID, and environment information.
+#
+# Required secrets:
+#   - BRIDGE_URL: CDEvents-OTel Bridge API URL
+#   - DOCKER_USERNAME: Docker registry username
+#   - DOCKER_PASSWORD: Docker registry password
+#   - KUBECONFIG: Kubernetes configuration for deployment
+
+name: Build, Deploy, and Send CDEvent
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  SERVICE_NAME: my-app
+  ENVIRONMENT: production
+  DOCKER_REGISTRY: docker.io/myorg
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+            ${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/${{ env.SERVICE_NAME }} \
+            ${{ env.SERVICE_NAME }}=${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+            --namespace=${{ env.ENVIRONMENT }}
+          kubectl rollout status deployment/${{ env.SERVICE_NAME }} \
+            --namespace=${{ env.ENVIRONMENT }} \
+            --timeout=5m
+
+      - name: Send CDEvent to Bridge
+        run: |
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EVENT_ID="evt-gha-${{ github.run_number }}"
+
+          curl -X POST ${{ secrets.BRIDGE_URL }}/api/v1/events \
+            -H "Content-Type: application/json" \
+            -d '{
+              "context": {
+                "version": "0.4.1",
+                "id": "'"${EVENT_ID}"'",
+                "source": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "type": "dev.cdevents.service.deployed.0.4.1",
+                "timestamp": "'"${TIMESTAMP}"'"
+              },
+              "subject": {
+                "id": "${{ env.SERVICE_NAME }}",
+                "type": "service",
+                "content": {
+                  "environment": {"id": "${{ env.ENVIRONMENT }}"},
+                  "artifactId": "${{ env.SERVICE_NAME }}:${{ github.sha }}"
+                }
+              },
+              "customData": {
+                "commitSha": "${{ github.sha }}",
+                "pipelineId": "${{ github.run_number }}",
+                "repository": "${{ github.repository }}",
+                "deployer": "github-actions",
+                "workflowUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "actor": "${{ github.actor }}"
+              }
+            }'
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment completed successfully!"
+          echo "Service: ${{ env.SERVICE_NAME }}"
+          echo "Environment: ${{ env.ENVIRONMENT }}"
+          echo "Version: ${{ github.sha }}"
+          echo "CDEvent sent to: ${{ secrets.BRIDGE_URL }}"

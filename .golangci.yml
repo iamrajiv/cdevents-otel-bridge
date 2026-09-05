@@ -1,0 +1,89 @@
+# golangci-lint v2 configuration. Run with `make lint`.
+# The linter binary must be built with a Go version at least as new as the
+# toolchain on PATH; otherwise it cannot type-check the standard library.
+# goconst is disabled for internal/cdevents because that package is a table
+# of JSON field names by design; naming every repeated key would hurt
+# readability. Test files are exempt from errcheck, goconst, unparam, noctx
+# and bodyclose.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - goconst
+    - nakedret
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - whitespace
+    - copyloopvar
+    - bodyclose
+    - noctx
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (io.ReadCloser).Close
+    govet:
+      enable-all: true
+      disable:
+        - shadow
+        - fieldalignment
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    misspell:
+      locale: US
+    nakedret:
+      max-func-lines: 30
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - goconst
+          - unparam
+          - noctx
+          - bodyclose
+      - path: internal/cdevents/
+        linters:
+          - goconst
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/iamrajiv/cdevents-otel-bridge
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

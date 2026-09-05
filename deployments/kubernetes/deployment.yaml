@@ -1,0 +1,81 @@
+# Deployment for the bridge. Configuration is mounted from the ConfigMap and
+# passed with -config; BRIDGE_REDIS_URL is read from an optional Secret so
+# Redis credentials never live in the manifests. Liveness and readiness use
+# /api/v1/health, the container runs unprivileged on a read-only root
+# filesystem, and Prometheus scrape annotations point at /metrics.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdevents-otel-bridge
+  namespace: cdevents-otel-bridge
+  labels:
+    app: cdevents-otel-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cdevents-otel-bridge
+  template:
+    metadata:
+      labels:
+        app: cdevents-otel-bridge
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bridge
+          image: ghcr.io/iamrajiv/cdevents-otel-bridge:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-config"
+            - "/etc/cdevents-otel-bridge/config.yaml"
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: BRIDGE_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cdevents-otel-bridge-secrets
+                  key: redis-url
+                  optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cdevents-otel-bridge
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: cdevents-otel-bridge-config

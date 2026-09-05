@@ -1,0 +1,134 @@
+/*
+Jenkinsfile demonstrating CDEvents integration with the CDEvents-OTel Bridge.
+
+This pipeline shows how to send deployment events to the bridge after a successful
+deployment. The pipeline builds, tests, and deploys an application, then sends a
+service.deployed CDEvent to track the deployment in the observability platform.
+
+Environment variables required:
+  - BRIDGE_URL: CDEvents-OTel Bridge API URL
+  - SERVICE_NAME: Name of the service being deployed
+  - ENVIRONMENT: Target environment (e.g., production, staging)
+*/
+
+pipeline {
+    agent any
+
+    environment {
+        BRIDGE_URL = "${env.BRIDGE_URL ?: 'http://cdevents-otel-bridge:8080'}"
+        SERVICE_NAME = 'my-app'
+        ENVIRONMENT = 'production'
+        DOCKER_REGISTRY = 'docker.io/myorg'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        returnStdout: true,
+                        script: 'git rev-parse --short HEAD'
+                    ).trim()
+                    env.VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh '''
+                    docker build -t ${DOCKER_REGISTRY}/${SERVICE_NAME}:${VERSION} .
+                    docker tag ${DOCKER_REGISTRY}/${SERVICE_NAME}:${VERSION} \
+                               ${DOCKER_REGISTRY}/${SERVICE_NAME}:latest
+                '''
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'docker run --rm ${DOCKER_REGISTRY}/${SERVICE_NAME}:${VERSION} go test ./...'
+            }
+        }
+
+        stage('Push') {
+            steps {
+                sh '''
+                    docker push ${DOCKER_REGISTRY}/${SERVICE_NAME}:${VERSION}
+                    docker push ${DOCKER_REGISTRY}/${SERVICE_NAME}:latest
+                '''
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    kubectl set image deployment/${SERVICE_NAME} \
+                        ${SERVICE_NAME}=${DOCKER_REGISTRY}/${SERVICE_NAME}:${VERSION} \
+                        --namespace=${ENVIRONMENT}
+                    kubectl rollout status deployment/${SERVICE_NAME} \
+                        --namespace=${ENVIRONMENT} \
+                        --timeout=5m
+                '''
+            }
+        }
+
+        stage('Send CDEvent') {
+            steps {
+                script {
+                    def timestamp = sh(
+                        returnStdout: true,
+                        script: 'date -u +%Y-%m-%dT%H:%M:%SZ'
+                    ).trim()
+
+                    def eventId = "evt-jenkins-${env.BUILD_NUMBER}"
+
+                    def event = [
+                        context: [
+                            version: '0.4.1',
+                            id: eventId,
+                            source: "${env.JENKINS_URL}job/${env.JOB_NAME}/${env.BUILD_NUMBER}",
+                            type: 'dev.cdevents.service.deployed.0.4.1',
+                            timestamp: timestamp
+                        ],
+                        subject: [
+                            id: env.SERVICE_NAME,
+                            type: 'service',
+                            content: [
+                                environment: [id: env.ENVIRONMENT],
+                                artifactId: "${env.SERVICE_NAME}:${env.VERSION}"
+                            ]
+                        ],
+                        customData: [
+                            commitSha: env.GIT_COMMIT,
+                            pipelineId: env.BUILD_NUMBER,
+                            repository: env.GIT_URL,
+                            deployer: 'jenkins',
+                            buildUrl: env.BUILD_URL
+                        ]
+                    ]
+
+                    writeJSON file: 'event.json', json: event
+
+                    sh """
+                        curl -X POST ${BRIDGE_URL}/api/v1/events \
+                            -H 'Content-Type: application/json' \
+                            -d @event.json
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'rm -f event.json'
+        }
+        success {
+            echo "Deployment successful! Event sent to CDEvents-OTel Bridge."
+        }
+        failure {
+            echo "Deployment failed. No CDEvent sent."
+        }
+    }
+}

@@ -1,0 +1,8 @@
+# Namespace that holds every bridge resource rendered by kustomization.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cdevents-otel-bridge
+  labels:
+    name: cdevents-otel-bridge
+    app: cdevents-otel-bridge

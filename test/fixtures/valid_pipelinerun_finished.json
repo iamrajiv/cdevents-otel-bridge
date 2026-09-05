@@ -1,0 +1,41 @@
+{
+  "context": {
+    "version": "0.4.1",
+    "id": "a9f8e7d6-c5b4-3a21-0987-6f5e4d3c2b1a",
+    "source": "https://github.com/iamrajiv/sample-app/actions",
+    "type": "dev.cdevents.pipelinerun.finished.0.2.0",
+    "timestamp": "2026-01-29T10:25:00Z",
+    "chainId": "chain-12345",
+    "links": [
+      {
+        "linkType": "CAUSE",
+        "linkId": "evt-11111"
+      }
+    ]
+  },
+  "subject": {
+    "id": "pipelinerun-98765",
+    "source": "https://github.com/iamrajiv/sample-app",
+    "type": "pipelineRun",
+    "content": {
+      "pipelineName": "ci-cd-pipeline",
+      "url": "https://github.com/iamrajiv/sample-app/actions/runs/98765",
+      "outcome": "success",
+      "errors": "",
+      "startTime": "2026-01-29T10:20:00Z",
+      "endTime": "2026-01-29T10:25:00Z",
+      "duration": "5m0s",
+      "repository": "https://github.com/iamrajiv/sample-app",
+      "commitSha": "a1b2c3d4e5f6789012345678901234567890abcd",
+      "branch": "main",
+      "triggeredBy": "push"
+    }
+  },
+  "customData": {
+    "testsRun": 127,
+    "testsPassed": 127,
+    "testsFailed": 0,
+    "coveragePercent": 87.5,
+    "lintIssues": 0
+  }
+}

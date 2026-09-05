@@ -1,0 +1,10 @@
+{
+  "context": {
+    "version": "0.4.1",
+    "id": "invalid-event-missing-fields",
+    "timestamp": "2026-01-29T10:30:00Z"
+  },
+  "subject": {
+    "id": "incomplete-subject"
+  }
+}

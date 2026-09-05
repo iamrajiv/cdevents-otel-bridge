@@ -1,0 +1,211 @@
+# Tekton Pipeline demonstrating CDEvents integration with the CDEvents-OTel Bridge.
+#
+# This pipeline builds, tests, and deploys an application, then sends a service.deployed
+# CDEvent to track the deployment in the observability platform. The pipeline uses
+# Tekton's native task system and integrates with the bridge via HTTP POST.
+#
+# Required parameters:
+#   - service-name: Name of the service being deployed
+#   - environment: Target environment (e.g., production, staging)
+#   - bridge-url: CDEvents-OTel Bridge API URL
+#   - docker-registry: Docker registry URL
+#   - git-url: Git repository URL
+#   - git-revision: Git commit SHA or branch
+
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: build-deploy-cdevent
+  namespace: default
+spec:
+  params:
+    - name: service-name
+      type: string
+      description: Name of the service to deploy
+      default: my-app
+    - name: environment
+      type: string
+      description: Deployment environment
+      default: production
+    - name: bridge-url
+      type: string
+      description: CDEvents-OTel Bridge API URL
+      default: http://cdevents-otel-bridge:8080
+    - name: docker-registry
+      type: string
+      description: Docker registry URL
+      default: docker.io/myorg
+    - name: git-url
+      type: string
+      description: Git repository URL
+    - name: git-revision
+      type: string
+      description: Git revision
+      default: main
+
+  workspaces:
+    - name: source
+      description: Workspace for source code
+    - name: docker-credentials
+      description: Docker registry credentials
+
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: source
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+
+    - name: build-image
+      taskRef:
+        name: buildah
+      runAfter:
+        - fetch-source
+      workspaces:
+        - name: source
+          workspace: source
+        - name: dockerconfig
+          workspace: docker-credentials
+      params:
+        - name: IMAGE
+          value: $(params.docker-registry)/$(params.service-name):$(params.git-revision)
+
+    - name: push-image
+      taskRef:
+        name: buildah
+      runAfter:
+        - build-image
+      workspaces:
+        - name: source
+          workspace: source
+        - name: dockerconfig
+          workspace: docker-credentials
+      params:
+        - name: IMAGE
+          value: $(params.docker-registry)/$(params.service-name):$(params.git-revision)
+        - name: PUSH
+          value: "true"
+
+    - name: deploy-to-kubernetes
+      taskRef:
+        name: kubernetes-actions
+      runAfter:
+        - push-image
+      params:
+        - name: script
+          value: |
+            kubectl set image deployment/$(params.service-name) \
+              $(params.service-name)=$(params.docker-registry)/$(params.service-name):$(params.git-revision) \
+              --namespace=$(params.environment)
+            kubectl rollout status deployment/$(params.service-name) \
+              --namespace=$(params.environment) \
+              --timeout=5m
+
+    - name: send-cdevent
+      runAfter:
+        - deploy-to-kubernetes
+      taskSpec:
+        params:
+          - name: service-name
+          - name: environment
+          - name: bridge-url
+          - name: git-revision
+          - name: git-url
+          - name: docker-registry
+        steps:
+          - name: send-event
+            image: curlimages/curl:8.5.0
+            script: |
+              #!/bin/sh
+              set -e
+
+              TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              EVENT_ID="evt-tekton-$(context.pipelineRun.name)"
+
+              cat > /tmp/event.json <<EOF
+              {
+                "context": {
+                  "version": "0.4.1",
+                  "id": "${EVENT_ID}",
+                  "source": "tekton://$(context.pipelineRun.namespace)/$(context.pipelineRun.name)",
+                  "type": "dev.cdevents.service.deployed.0.4.1",
+                  "timestamp": "${TIMESTAMP}"
+                },
+                "subject": {
+                  "id": "$(params.service-name)",
+                  "type": "service",
+                  "content": {
+                    "environment": {"id": "$(params.environment)"},
+                    "artifactId": "$(params.service-name):$(params.git-revision)"
+                  }
+                },
+                "customData": {
+                  "commitSha": "$(params.git-revision)",
+                  "pipelineId": "$(context.pipelineRun.name)",
+                  "repository": "$(params.git-url)",
+                  "deployer": "tekton",
+                  "namespace": "$(context.pipelineRun.namespace)"
+                }
+              }
+              EOF
+
+              echo "Sending CDEvent to $(params.bridge-url)"
+              curl -X POST $(params.bridge-url)/api/v1/events \
+                -H "Content-Type: application/json" \
+                -d @/tmp/event.json
+
+              echo "CDEvent sent successfully!"
+      params:
+        - name: service-name
+          value: $(params.service-name)
+        - name: environment
+          value: $(params.environment)
+        - name: bridge-url
+          value: $(params.bridge-url)
+        - name: git-revision
+          value: $(params.git-revision)
+        - name: git-url
+          value: $(params.git-url)
+        - name: docker-registry
+          value: $(params.docker-registry)
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: build-deploy-cdevent-run-
+  namespace: default
+spec:
+  pipelineRef:
+    name: build-deploy-cdevent
+  params:
+    - name: service-name
+      value: my-app
+    - name: environment
+      value: production
+    - name: bridge-url
+      value: http://cdevents-otel-bridge:8080
+    - name: docker-registry
+      value: docker.io/myorg
+    - name: git-url
+      value: https://github.com/demo/my-app
+    - name: git-revision
+      value: main
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+    - name: docker-credentials
+      secret:
+        secretName: docker-credentials
